@@ -56,19 +56,47 @@
   <button id="startButton">Start Listening</button>
 
   <table>
-    <tr>
-      <th>Wakeword</th>
-      <th>Detected</th>
-    </tr>
-    <tr>
-      <td></td>
-      <td></td>
-    </tr>
+    <thead>
+      <tr>
+        <th>Wakeword</th>
+        <th>Detected</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
   </table>
 
   <script>
   // Create websocket connection
-  const ws = new WebSocket('ws://localhost:9000/ws');
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const ws = new WebSocket(`${wsProtocol}//${window.location.host}/ws`);
+
+  function normalizeLoadedModels(loadedModels, modelLabels = {}) {
+    return loadedModels.map(model => {
+      if (typeof model === 'string') {
+        return { id: model, label: modelLabels[model] || model };
+      }
+
+      return {
+        id: model.id,
+        label: model.label || modelLabels[model.id] || model.id,
+      };
+    });
+  }
+
+  function renderLoadedModels(loadedModels) {
+    const tableBody = document.querySelector('table tbody');
+    tableBody.innerHTML = '';
+
+    loadedModels.forEach(model => {
+      const row = tableBody.insertRow();
+      row.dataset.modelId = model.id;
+
+      const labelCell = row.insertCell();
+      const detectionCell = row.insertCell();
+      labelCell.textContent = model.label;
+      detectionCell.textContent = '';
+    });
+  }
 
   // When the websocket connection is open
   ws.onopen = function() {
@@ -80,34 +108,18 @@
     console.log(event.data);
     const model_payload = JSON.parse(event.data);
     if ("loaded_models" in model_payload) {
-      // Add loaded models to the rows of the first column in the table, inserting rows as needed
-      const table = document.querySelector('table');
-      const rows = table.querySelectorAll('tr');
-      for (let i = 1; i < model_payload.loaded_models.length + 1; i++) {
-        if (i < rows.length) {
-          const row = rows[i];
-          const cell = row.querySelectorAll('td')[0];
-          cell.textContent = model_payload.loaded_models[i - 1];
-        } else {
-          // Insert extra rows if needed, both column 1 and 2
-          const row = table.insertRow();
-          const cell1 = row.insertCell();
-          const cell2 = row.insertCell();
-          cell1.textContent = model_payload.loaded_models[i - 1];
-          cell2.textContent = '';
-        }
-      }
-
+      renderLoadedModels(
+        normalizeLoadedModels(model_payload.loaded_models, model_payload.model_labels || {})
+      );
     }
 
     if ("activations" in model_payload) {
       // Add detected wakeword to the rows of the second column in the table
-      const table = document.querySelector('table');
-      const rows = table.querySelectorAll('tr');
-      for (let i = 1; i < rows.length; i++) {
+      const rows = document.querySelectorAll('table tbody tr');
+      rows.forEach(row => {
         // Check for the model name in the first column and add "Detected!" to the second column if they match
-        if (model_payload.activations.includes(rows[i].querySelectorAll('td')[0].textContent)) {
-          const cell = rows[i].querySelectorAll('td')[1];
+        if (model_payload.activations.includes(row.dataset.modelId)) {
+          const cell = row.querySelectorAll('td')[1];
           cell.textContent = "Detected!";
           cell.classList.add('detected-animation'); // animate fade out
       
@@ -117,7 +129,7 @@
             cell.classList.remove('detected-animation');
           }, { once: true });
         }
-      }
+      });
     }
   };
 
